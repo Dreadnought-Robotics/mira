@@ -1,11 +1,11 @@
 {
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
     "python.analysis.extraPaths": [
         "/opt/ros/jazzy/lib/python3.12/site-packages",
-        "/home/nes/DNT/mira/install/custom_msgs/lib/python3.12/site-packages",
+        "${workspaceFolder}/install/custom_msgs/lib/python3.12/site-packages"
     ],
     "python.autoComplete.extraPaths": [
-        "/opt/ros/jazzy/lib/python3.13/site-packages",
-        "/home/nes/DNT/mira/install/custom_msgs/lib/python3.12/site-packages",
-    ],
-    // "clangd.com"
+        "/opt/ros/jazzy/lib/python3.12/site-packages",
+        "${workspaceFolder}/install/custom_msgs/lib/python3.12/site-packages"
+    ]
 }
