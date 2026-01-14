@@ -1,5 +1,9 @@
+<img width="960" height="1280" alt="image" src="https://github.com/user-attachments/assets/1f643f54-825b-4657-b129-be1897e39837" />
+
 # Mira Firmware
 The firmware for the Mira AUV
+Please consult the [https://github.com/Dreadnought-Robotics/mira/wiki](wiki) for detailed usage instructions and documentation
+
 
 > [!IMPORTANT]
 > This software package is designed to run on ROS2 Jazzy which supports Ubuntu 24.04 LTS as Tier 1 and Ubuntu 22.04 as Tier 3
