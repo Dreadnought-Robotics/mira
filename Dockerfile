@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     pkg-config \
     lld \
     ninja-build \
-    python3-pip
+    python3-pip \
+    usbutils
 
 # Install uv (Python package manager)
 COPY --from=ghcr.io/astral-sh/uv:0.8.18 /uv /uvx /bin/
