@@ -29,7 +29,7 @@ WORKDIR /workspace
 COPY . .
 
 # Install Python dependencies using uv
-# RUN uv sync
+RUN uv sync
 
 # Install ROS dependencies
 RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && \
@@ -43,13 +43,11 @@ RUN rm -rf ./build ./log ./install
 
 # Build the workspace
 RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && \
-    source .venv/bin/activate && \
     make build"
 
 # Create a script to source the environment
 RUN echo '#!/bin/bash\n\
 source /opt/ros/jazzy/setup.bash\n\
-source .venv/bin/activate\n\
 source install/setup.bash\n\
 exec "$@"' > /entrypoint.sh && \
     chmod +x /entrypoint.sh

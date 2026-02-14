@@ -81,10 +81,13 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# Install launch files
-install(DIRECTORY launch/
-  DESTINATION share/${PROJECT_NAME}/launch
-)
+# Install launch files (only if they exist)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/launch)
+  install(DIRECTORY launch/
+    DESTINATION share/${PROJECT_NAME}/launch
+  )
+endif()
+
 
 # # Install calibration files
 # install(DIRECTORY calibration_files/
