@@ -9,6 +9,9 @@ services:
       - .:/workspace
     user: "${_UID}:${_GID}"
     network_mode: host
+    devices:
+      - /dev/camera_bottom
+#      - /dev/camera_front 
     working_dir: /workspace
     entrypoint: /bin/bash
 
@@ -18,17 +21,10 @@ services:
       context: .
       dockerfile: Dockerfile
     working_dir: /workspace
-    # Maps current directory to /workspace
     volumes:
       - .:/workspace
-    # Sets the user/group ID to match the host (requires variables to be set)
     user: "${_UID}:${_GID}"
-    # Uses host networking
     network_mode: "host"
-    # Pass environment variable from host to container
-    environment:
-      - COLCON_ARGS
-    # The build command sequence
     command: >
       bash -c "make repoversion &&
       make clean &&

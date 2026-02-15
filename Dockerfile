@@ -27,7 +27,7 @@ RUN rosdep update
 WORKDIR /workspace
 
 # Copy project files
-COPY . .
+RUN git clone https://github.com/Dreadnought-Robotics/mira /workspace
 
 # Install Python dependencies using uv
 RUN uv sync
@@ -42,9 +42,13 @@ RUN rm -rf ./build ./log ./install
 
 # RUN apt install libusb-1.0-0-dev -y
 
+RUN apt-get install --no-install-recommends -y \
+    usbutils
+
+
+
 # Build the workspace
-RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && \
-    make build"
+RUN /bin/bash -c "make build"
 
 # Create a script to source the environment
 RUN echo '#!/bin/bash\n\

@@ -93,9 +93,12 @@ build-docker-container:
 	$(info Building Docker container...)
 	@docker build -t mira .
 
+docker-fix-perms:
+	sudo chown -R $(shell id -u):$(shell id -g) .
+
 export _UID=$(shell id -u)
 export _GID=$(shell id -g)
-build-in-docker:
+build-in-docker: docker-fix-perms
 	docker-compose up mira-builder
 	# @docker run \
 	# 	--rm \
