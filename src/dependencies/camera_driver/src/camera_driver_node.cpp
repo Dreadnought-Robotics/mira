@@ -1,4 +1,6 @@
 // camera_rtsp_streamer.cpp
+// Updated to support hexadecimal vendor_id and product_id from launch files
+
 #include <rclcpp/rclcpp.hpp>
 #include <gst/gst.h>
 #include <gst/rtsp-server/rtsp-server.h>
@@ -23,31 +25,45 @@ public:
         // Create GLib main loop (required for RTSP server)
         loop_ = g_main_loop_new(nullptr, FALSE);
 
-        // Declare parameters
+        // Declare parameters - vendor_id and product_id as strings to support hex
         this->declare_parameter("device_path", "");
-        this->declare_parameter("vendor_id", -1);
-        this->declare_parameter("product_id", -1);
+        this->declare_parameter("vendor_id", "");  // String to support "0x1234" format
+        this->declare_parameter("product_id", "");  // String to support "0x1234" format
         this->declare_parameter("serial_no", "");
         this->declare_parameter("image_width", 640);
         this->declare_parameter("image_height", 480);
         this->declare_parameter("frame_format", "MJPEG");
         this->declare_parameter("framerate", 30);
-        this->declare_parameter("rtsp_port", 8554);
-        this->declare_parameter("rtsp_mount_point", "/camera");
+        this->declare_parameter("port", 8554);
         this->declare_parameter("bitrate", 2000);  // kbps for H.264 encoding
 
         // Get parameters
-        int vendor = this->get_parameter("vendor_id").as_int();
-        int product = this->get_parameter("product_id").as_int();
+        std::string vendor_str = this->get_parameter("vendor_id").as_string();
+        std::string product_str = this->get_parameter("product_id").as_string();
         std::string serial = this->get_parameter("serial_no").as_string();
         int width = this->get_parameter("image_width").as_int();
         int height = this->get_parameter("image_height").as_int();
         std::string fmt = this->get_parameter("frame_format").as_string();
         int framerate = this->get_parameter("framerate").as_int();
         std::string dev = this->get_parameter("device_path").as_string();
-        int port = this->get_parameter("rtsp_port").as_int();
-        std::string mount_point = this->get_parameter("rtsp_mount_point").as_string();
+        int port = this->get_parameter("port").as_int();
+        std::string mount_point = "/image_rtsp";
         int bitrate = this->get_parameter("bitrate").as_int();
+
+        // Parse vendor and product IDs (support both hex "0x1234" and decimal "1234")
+        int vendor = parse_id(vendor_str, "vendor_id");
+        int product = parse_id(product_str, "product_id");
+
+        // Log the parsed values
+        if (vendor != -1) {
+            RCLCPP_INFO(this->get_logger(), "Vendor ID: 0x%04x (%d)", vendor, vendor);
+        }
+        if (product != -1) {
+            RCLCPP_INFO(this->get_logger(), "Product ID: 0x%04x (%d)", product, product);
+        }
+        if (!serial.empty()) {
+            RCLCPP_INFO(this->get_logger(), "Serial: %s", serial.c_str());
+        }
 
         // Find webcam device
         if (dev.empty()) {
@@ -114,6 +130,21 @@ public:
             }
         }
 
+        // Print configuration
+        RCLCPP_INFO(this->get_logger(), "============================================================");
+        RCLCPP_INFO(this->get_logger(), "RTSP Stream Configuration:");
+        RCLCPP_INFO(this->get_logger(), "============================================================");
+        RCLCPP_INFO(this->get_logger(), "Device:             %s", dev.c_str());
+        RCLCPP_INFO(this->get_logger(), "Image Width:        %d px", width);
+        RCLCPP_INFO(this->get_logger(), "Image Height:       %d px", height);
+        RCLCPP_INFO(this->get_logger(), "Frame Format:       %s", fmt.c_str());
+        RCLCPP_INFO(this->get_logger(), "Framerate:          %d fps", framerate);
+        RCLCPP_INFO(this->get_logger(), "H.264 Bitrate:      %d kbps", bitrate);
+        RCLCPP_INFO(this->get_logger(), "RTSP Port:          %d", port);
+        RCLCPP_INFO(this->get_logger(), "RTSP Mount Point:   %s", mount_point.c_str());
+        RCLCPP_INFO(this->get_logger(), "RTSP URL:           rtsp://<host>:%d%s", port, mount_point.c_str());
+        RCLCPP_INFO(this->get_logger(), "============================================================");
+
         // Build GStreamer pipeline for RTSP streaming with ultra-low latency
         std::string gst_format = get_gstreamer_format(fmt);
         std::stringstream ss;
@@ -145,21 +176,6 @@ public:
            << ")";
 
         pipeline_str_ = ss.str();
-
-        // Print configuration
-        RCLCPP_INFO(this->get_logger(), "============================================================");
-        RCLCPP_INFO(this->get_logger(), "RTSP Stream Configuration:");
-        RCLCPP_INFO(this->get_logger(), "============================================================");
-        RCLCPP_INFO(this->get_logger(), "Device:             %s", dev.c_str());
-        RCLCPP_INFO(this->get_logger(), "Image Width:        %d px", width);
-        RCLCPP_INFO(this->get_logger(), "Image Height:       %d px", height);
-        RCLCPP_INFO(this->get_logger(), "Frame Format:       %s", fmt.c_str());
-        RCLCPP_INFO(this->get_logger(), "Framerate:          %d fps", framerate);
-        RCLCPP_INFO(this->get_logger(), "H.264 Bitrate:      %d kbps", bitrate);
-        RCLCPP_INFO(this->get_logger(), "RTSP Port:          %d", port);
-        RCLCPP_INFO(this->get_logger(), "RTSP Mount Point:   %s", mount_point.c_str());
-        RCLCPP_INFO(this->get_logger(), "RTSP URL:           rtsp://<host>:%d%s", port, mount_point.c_str());
-        RCLCPP_INFO(this->get_logger(), "============================================================");
         RCLCPP_INFO(this->get_logger(), "GStreamer pipeline: %s", pipeline_str_.c_str());
         RCLCPP_INFO(this->get_logger(), "============================================================");
 
@@ -202,6 +218,27 @@ public:
     }
 
 private:
+    // Parse ID string - supports hex "0x1234" and decimal "1234"
+    int parse_id(const std::string& id_str, const std::string& param_name)
+    {
+        if (id_str.empty()) {
+            return -1;
+        }
+
+        try {
+            // Check if hex (starts with 0x or 0X)
+            if (id_str.length() >= 2 && (id_str.substr(0, 2) == "0x" || id_str.substr(0, 2) == "0X")) {
+                return std::stoi(id_str, nullptr, 16);
+            } else {
+                return std::stoi(id_str, nullptr, 10);
+            }
+        } catch (const std::exception& e) {
+            RCLCPP_WARN(this->get_logger(), "Invalid %s format: %s (error: %s)", 
+                       param_name.c_str(), id_str.c_str(), e.what());
+            return -1;
+        }
+    }
+
     std::string find_webcam(int vendor, int product, const std::string& serial)
     {
         glob_t glob_result;
@@ -239,36 +276,64 @@ private:
 
             bool match = true;
 
-            if (vendor != -1) {
-                const char* vid = udev_device_get_sysattr_value(device, "idVendor");
-                if (!vid || strtol(vid, nullptr, 16) != vendor) {
-                    match = false;
-                }
-            }
+            // Get parent USB device
+            struct udev_device* usb_device = udev_device_get_parent_with_subsystem_devtype(
+                device, "usb", "usb_device");
 
-            if (match && product != -1) {
-                const char* pid = udev_device_get_sysattr_value(device, "idProduct");
-                if (!pid || strtol(pid, nullptr, 16) != product) {
-                    match = false;
+            if (usb_device) {
+                if (vendor != -1) {
+                    const char* vid = udev_device_get_sysattr_value(usb_device, "idVendor");
+                    if (vid) {
+                        int device_vendor = std::stoi(vid, nullptr, 16);
+                        RCLCPP_DEBUG(this->get_logger(), "Device %s vendor: 0x%04x", dev.c_str(), device_vendor);
+                        if (device_vendor != vendor) {
+                            match = false;
+                        }
+                    } else {
+                        match = false;
+                    }
                 }
-            }
 
-            if (match && !serial.empty()) {
-                const char* ser = udev_device_get_sysattr_value(device, "serial");
-                if (!ser || serial != ser) {
-                    match = false;
+                if (match && product != -1) {
+                    const char* pid = udev_device_get_sysattr_value(usb_device, "idProduct");
+                    if (pid) {
+                        int device_product = std::stoi(pid, nullptr, 16);
+                        RCLCPP_DEBUG(this->get_logger(), "Device %s product: 0x%04x", dev.c_str(), device_product);
+                        if (device_product != product) {
+                            match = false;
+                        }
+                    } else {
+                        match = false;
+                    }
                 }
+
+                if (match && !serial.empty()) {
+                    const char* ser = udev_device_get_sysattr_value(usb_device, "serial");
+                    if (ser) {
+                        RCLCPP_DEBUG(this->get_logger(), "Device %s serial: %s", dev.c_str(), ser);
+                        if (serial != ser) {
+                            match = false;
+                        }
+                    } else {
+                        match = false;
+                    }
+                }
+            } else {
+                // Not a USB device
+                match = false;
             }
 
             udev_device_unref(device);
 
             if (match) {
+                RCLCPP_INFO(this->get_logger(), "Found matching camera: %s", dev.c_str());
                 udev_unref(udev);
                 return dev;
             }
         }
 
         udev_unref(udev);
+        RCLCPP_WARN(this->get_logger(), "No matching camera found with specified vendor/product/serial");
         return "";
     }
 
