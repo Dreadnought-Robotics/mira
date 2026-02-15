@@ -1,30 +1,27 @@
-// camera_driver_node.cpp
+// camera_rtsp_streamer.cpp
 #include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/image.hpp>
-#include <sensor_msgs/msg/camera_info.hpp>
 #include <gst/gst.h>
-#include <gst/app/gstappsink.h>
+#include <gst/rtsp-server/rtsp-server.h>
 #include <memory>
 #include <string>
 #include <sstream>
 #include <vector>
-#include <thread>
 #include <atomic>
-#include <chrono>
-#include <pthread.h>
-#include <sched.h>
 #include <libudev.h>
 #include <glob.h>
 #include <regex>
 #include <sys/stat.h>
 
-class CameraStreamer : public rclcpp::Node
+class RTSPCameraStreamer : public rclcpp::Node
 {
 public:
-    CameraStreamer() : Node("camera_driver_gstreamer_node")
+    RTSPCameraStreamer() : Node("rtsp_camera_streamer")
     {
         // Initialize GStreamer
         gst_init(nullptr, nullptr);
+        
+        // Create GLib main loop (required for RTSP server)
+        loop_ = g_main_loop_new(nullptr, FALSE);
 
         // Declare parameters
         this->declare_parameter("device_path", "");
@@ -35,20 +32,22 @@ public:
         this->declare_parameter("image_height", 480);
         this->declare_parameter("frame_format", "MJPEG");
         this->declare_parameter("framerate", 30);
-        this->declare_parameter("camera_name", "camera");
-        this->declare_parameter("frame_id", "camera_frame");
+        this->declare_parameter("rtsp_port", 8554);
+        this->declare_parameter("rtsp_mount_point", "/camera");
+        this->declare_parameter("bitrate", 2000);  // kbps for H.264 encoding
 
         // Get parameters
         int vendor = this->get_parameter("vendor_id").as_int();
         int product = this->get_parameter("product_id").as_int();
         std::string serial = this->get_parameter("serial_no").as_string();
-        width_ = this->get_parameter("image_width").as_int();
-        height_ = this->get_parameter("image_height").as_int();
+        int width = this->get_parameter("image_width").as_int();
+        int height = this->get_parameter("image_height").as_int();
         std::string fmt = this->get_parameter("frame_format").as_string();
-        framerate_ = this->get_parameter("framerate").as_int();
+        int framerate = this->get_parameter("framerate").as_int();
         std::string dev = this->get_parameter("device_path").as_string();
-        std::string camera_name = this->get_parameter("camera_name").as_string();
-        frame_id_ = this->get_parameter("frame_id").as_string();
+        int port = this->get_parameter("rtsp_port").as_int();
+        std::string mount_point = this->get_parameter("rtsp_mount_point").as_string();
+        int bitrate = this->get_parameter("bitrate").as_int();
 
         // Find webcam device
         if (dev.empty()) {
@@ -63,7 +62,6 @@ public:
             }
         }
 
-        device_ = dev;
         RCLCPP_INFO(this->get_logger(), "Using webcam: %s", dev.c_str());
 
         // Query and adjust capabilities
@@ -91,15 +89,14 @@ public:
         if (!supported_resolutions.empty()) {
             bool res_found = false;
             for (const auto& res : supported_resolutions) {
-                if (res.first == width_ && res.second == height_) {
+                if (res.first == width && res.second == height) {
                     res_found = true;
                     break;
                 }
             }
             if (!res_found) {
-                // Find closest resolution
                 auto best_res = supported_resolutions[0];
-                int target_area = width_ * height_;
+                int target_area = width * height;
                 int min_diff = std::abs(best_res.first * best_res.second - target_area);
                 
                 for (const auto& res : supported_resolutions) {
@@ -110,230 +107,101 @@ public:
                     }
                 }
                 
-                RCLCPP_WARN(this->get_logger(), "Requested resolution %dx%d not supported", width_, height_);
-                width_ = best_res.first;
-                height_ = best_res.second;
-                RCLCPP_WARN(this->get_logger(), "Using %dx%d instead", width_, height_);
+                RCLCPP_WARN(this->get_logger(), "Requested resolution %dx%d not supported", width, height);
+                width = best_res.first;
+                height = best_res.second;
+                RCLCPP_WARN(this->get_logger(), "Using %dx%d instead", width, height);
             }
         }
 
-        // Print configuration
-        RCLCPP_INFO(this->get_logger(), "============================================================");
-        RCLCPP_INFO(this->get_logger(), "Stream Configuration:");
-        RCLCPP_INFO(this->get_logger(), "============================================================");
-        RCLCPP_INFO(this->get_logger(), "Device:             %s", dev.c_str());
-        RCLCPP_INFO(this->get_logger(), "Image Width:        %d px", width_);
-        RCLCPP_INFO(this->get_logger(), "Image Height:       %d px", height_);
-        RCLCPP_INFO(this->get_logger(), "Frame Format:       %s", fmt.c_str());
-        RCLCPP_INFO(this->get_logger(), "Framerate:          %d fps", framerate_);
-        RCLCPP_INFO(this->get_logger(), "ROS2 Topic:         /%s/image_raw", camera_name.c_str());
-        RCLCPP_INFO(this->get_logger(), "Camera Info Topic:  /%s/camera_info", camera_name.c_str());
-        RCLCPP_INFO(this->get_logger(), "============================================================");
-
-        // Create publishers
-        image_pub_ = this->create_publisher<sensor_msgs::msg::Image>(
-            camera_name + "/image_raw", 10);
-        camera_info_pub_ = this->create_publisher<sensor_msgs::msg::CameraInfo>(
-            camera_name + "/camera_info", 10);
-
-        // Build GStreamer pipeline - keep it simple
+        // Build GStreamer pipeline for RTSP streaming with ultra-low latency
         std::string gst_format = get_gstreamer_format(fmt);
         std::stringstream ss;
         
-        ss << "v4l2src device=" << dev << " ! "
-           << gst_format << ",width=" << width_ 
-           << ",height=" << height_ 
-           << ",framerate=" << framerate_ << "/1 ! ";
+        ss << "( "
+           << "v4l2src device=" << dev << " ! "
+           << gst_format << ",width=" << width 
+           << ",height=" << height 
+           << ",framerate=" << framerate << "/1 ! ";
 
         // Decode MJPEG if needed
         if (strcasecmp(fmt.c_str(), "MJPEG") == 0) {
             ss << "jpegdec ! ";
         }
 
-        ss << "videoconvert ! video/x-raw,format=RGB ! "
-           << "appsink name=appsink";
+        // Convert to I420 and encode to H.264 for RTSP with low-latency settings
+        ss << "videoconvert ! "
+           << "video/x-raw,format=I420 ! "
+           << "x264enc bitrate=" << bitrate 
+           << " speed-preset=ultrafast tune=zerolatency "
+           << " key-int-max=" << framerate  // Keyframe every 1 second
+           << " bframes=0 "  // No B-frames
+           << " sliced-threads=true "
+           << " rc-lookahead=0 "  // No lookahead
+           << " sync-lookahead=0 "
+           << " vbv-buf-capacity=0 "  // No buffering
+           << " ! "
+           << "rtph264pay name=pay0 pt=96 config-interval=1 "
+           << ")";
 
-        std::string pipeline_str = ss.str();
+        pipeline_str_ = ss.str();
 
-        RCLCPP_INFO(this->get_logger(), "GStreamer pipeline: %s", pipeline_str.c_str());
+        // Print configuration
+        RCLCPP_INFO(this->get_logger(), "============================================================");
+        RCLCPP_INFO(this->get_logger(), "RTSP Stream Configuration:");
+        RCLCPP_INFO(this->get_logger(), "============================================================");
+        RCLCPP_INFO(this->get_logger(), "Device:             %s", dev.c_str());
+        RCLCPP_INFO(this->get_logger(), "Image Width:        %d px", width);
+        RCLCPP_INFO(this->get_logger(), "Image Height:       %d px", height);
+        RCLCPP_INFO(this->get_logger(), "Frame Format:       %s", fmt.c_str());
+        RCLCPP_INFO(this->get_logger(), "Framerate:          %d fps", framerate);
+        RCLCPP_INFO(this->get_logger(), "H.264 Bitrate:      %d kbps", bitrate);
+        RCLCPP_INFO(this->get_logger(), "RTSP Port:          %d", port);
+        RCLCPP_INFO(this->get_logger(), "RTSP Mount Point:   %s", mount_point.c_str());
+        RCLCPP_INFO(this->get_logger(), "RTSP URL:           rtsp://<host>:%d%s", port, mount_point.c_str());
+        RCLCPP_INFO(this->get_logger(), "============================================================");
+        RCLCPP_INFO(this->get_logger(), "GStreamer pipeline: %s", pipeline_str_.c_str());
+        RCLCPP_INFO(this->get_logger(), "============================================================");
 
-        // Create pipeline
-        GError* error = nullptr;
-        pipeline_ = gst_parse_launch(pipeline_str.c_str(), &error);
-        if (error) {
-            std::string err_msg = error->message;
-            g_error_free(error);
-            throw std::runtime_error("Failed to create pipeline: " + err_msg);
+        // Create RTSP server
+        server_ = gst_rtsp_server_new();
+        gst_rtsp_server_set_service(server_, std::to_string(port).c_str());
+
+        // Get the mount points
+        GstRTSPMountPoints* mounts = gst_rtsp_server_get_mount_points(server_);
+
+        // Create a media factory
+        GstRTSPMediaFactory* factory = gst_rtsp_media_factory_new();
+        
+        // Set the launch pipeline
+        gst_rtsp_media_factory_set_launch(factory, pipeline_str_.c_str());
+        
+        // Allow multiple clients
+        gst_rtsp_media_factory_set_shared(factory, TRUE);
+
+        // Attach the factory to the mount point
+        gst_rtsp_mount_points_add_factory(mounts, mount_point.c_str(), factory);
+
+        // Clean up
+        g_object_unref(mounts);
+
+        // Attach the server to the default main context
+        server_id_ = gst_rtsp_server_attach(server_, nullptr);
+
+        if (server_id_ == 0) {
+            throw std::runtime_error("Failed to attach RTSP server");
         }
 
-        // Get appsink
-        appsink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "appsink");
-        if (!appsink_) {
-            throw std::runtime_error("Failed to get appsink element");
-        }
-
-        // Configure appsink - sync=TRUE is important for smooth playback
-        g_object_set(G_OBJECT(appsink_),
-            "emit-signals", FALSE,
-            "sync", TRUE,  // Let GStreamer handle timing
-            NULL);
-
-        // Start pipeline
-        GstStateChangeReturn ret = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
-        if (ret == GST_STATE_CHANGE_FAILURE) {
-            throw std::runtime_error("Unable to set pipeline to playing state");
-        }
-
-        RCLCPP_INFO(this->get_logger(), "GStreamer pipeline started successfully");
-
-        // Start frame grabbing thread (blocking pull mode like gscam)
-        stop_signal_ = false;
-        grab_thread_ = std::thread([this]() {
-            this->grab_frames();
-        });
-
-        frame_count_ = 0;
+        RCLCPP_INFO(this->get_logger(), "RTSP server started successfully");
+        RCLCPP_INFO(this->get_logger(), "Stream available at: rtsp://<host>:%d%s", port, mount_point.c_str());
     }
 
-    ~CameraStreamer()
+    ~RTSPCameraStreamer()
     {
         cleanup();
     }
 
 private:
-    GstFlowReturn on_new_sample()
-    {
-        // Pull sample directly (blocking call, more efficient than signal)
-        GstSample* sample = gst_app_sink_pull_sample(GST_APP_SINK(appsink_));
-        if (!sample) {
-            return GST_FLOW_EOS;
-        }
-
-        GstBuffer* buffer = gst_sample_get_buffer(sample);
-        GstCaps* caps = gst_sample_get_caps(sample);
-
-        // Get frame dimensions from caps (cache to avoid repeated queries)
-        static int cached_width = -1, cached_height = -1;
-        if (cached_width == -1 || cached_height == -1) {
-            GstStructure* structure = gst_caps_get_structure(caps, 0);
-            gst_structure_get_int(structure, "width", &cached_width);
-            gst_structure_get_int(structure, "height", &cached_height);
-        }
-        int width = cached_width;
-        int height = cached_height;
-
-        // Map buffer memory (read-only)
-        GstMapInfo map;
-        if (!gst_buffer_map(buffer, &map, GST_MAP_READ)) {
-            gst_sample_unref(sample);
-            return GST_FLOW_ERROR;
-        }
-
-        // Get timestamp - use ROS time for now (GStreamer timestamps can drift)
-        rclcpp::Time stamp = this->now();
-
-        // Create ROS2 Image message - pre-allocate to avoid reallocation
-        auto img_msg = std::make_unique<sensor_msgs::msg::Image>();
-        img_msg->header.stamp = stamp;
-        img_msg->header.frame_id = frame_id_;
-        img_msg->height = height;
-        img_msg->width = width;
-        img_msg->encoding = "rgb8";
-        img_msg->is_bigendian = false;
-        img_msg->step = width * 3;
-        
-        // Efficient copy - direct memory copy, no intermediate buffer
-        size_t expected_size = width * height * 3;
-        if (map.size >= expected_size) {
-            img_msg->data.assign(map.data, map.data + expected_size);
-        } else {
-            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                "Buffer underflow: expected %zu bytes, got %zu", expected_size, map.size);
-            gst_buffer_unmap(buffer, &map);
-            gst_sample_unref(sample);
-            return GST_FLOW_ERROR;
-        }
-
-        // Unmap and release ASAP
-        gst_buffer_unmap(buffer, &map);
-        gst_sample_unref(sample);
-
-        // Publish image (move semantics - no copy)
-        image_pub_->publish(std::move(img_msg));
-
-        // Publish camera info (lightweight)
-        auto camera_info_msg = create_camera_info();
-        camera_info_msg.header.stamp = stamp;
-        camera_info_msg.header.frame_id = frame_id_;
-        camera_info_pub_->publish(camera_info_msg);
-
-        // Minimal logging
-        frame_count_++;
-
-        return GST_FLOW_OK;
-    }
-
-    static void start_feed(GstElement* pipeline, guint size, gpointer data)
-    {
-        // Called when pipeline needs data
-    }
-
-    static void stop_feed(GstElement* pipeline, gpointer data)
-    {
-        // Called when pipeline has enough data
-    }
-
-    void grab_frames()
-    {
-        RCLCPP_INFO(this->get_logger(), "Frame grabbing thread started");
-        
-        while (!stop_signal_ && rclcpp::ok()) {
-            // This blocks until a new frame is available
-            GstFlowReturn ret = on_new_sample();
-            
-            if (ret != GST_FLOW_OK) {
-                if (ret == GST_FLOW_EOS) {
-                    RCLCPP_INFO(this->get_logger(), "End of stream");
-                } else if (ret != GST_FLOW_FLUSHING) {
-                    RCLCPP_WARN(this->get_logger(), "Flow error: %d", ret);
-                }
-                break;
-            }
-        }
-        
-        RCLCPP_INFO(this->get_logger(), "Frame grabbing thread stopped");
-    }
-
-    sensor_msgs::msg::CameraInfo create_camera_info()
-    {
-        sensor_msgs::msg::CameraInfo camera_info;
-        camera_info.width = width_;
-        camera_info.height = height_;
-        camera_info.distortion_model = "plumb_bob";
-
-        // Simple pinhole camera model
-        double fx = width_;
-        double fy = width_;
-        double cx = width_ / 2.0;
-        double cy = height_ / 2.0;
-
-        camera_info.k = {fx, 0.0, cx,
-                        0.0, fy, cy,
-                        0.0, 0.0, 1.0};
-        
-        camera_info.d = {0.0, 0.0, 0.0, 0.0, 0.0};
-        
-        camera_info.r = {1.0, 0.0, 0.0,
-                        0.0, 1.0, 0.0,
-                        0.0, 0.0, 1.0};
-        
-        camera_info.p = {fx, 0.0, cx, 0.0,
-                        0.0, fy, cy, 0.0,
-                        0.0, 0.0, 1.0, 0.0};
-
-        return camera_info;
-    }
-
     std::string find_webcam(int vendor, int product, const std::string& serial)
     {
         glob_t glob_result;
@@ -559,38 +427,28 @@ private:
 
     void cleanup()
     {
-        stop_signal_ = true;
-        
-        if (grab_thread_.joinable()) {
-            grab_thread_.join();
+        if (loop_) {
+            g_main_loop_quit(loop_);
+            g_main_loop_unref(loop_);
+            loop_ = nullptr;
         }
         
-        if (pipeline_) {
-            gst_element_set_state(pipeline_, GST_STATE_NULL);
-            gst_object_unref(pipeline_);
-            pipeline_ = nullptr;
+        if (server_id_ != 0) {
+            g_source_remove(server_id_);
+            server_id_ = 0;
         }
-        if (appsink_) {
-            gst_object_unref(appsink_);
-            appsink_ = nullptr;
+        
+        if (server_) {
+            g_object_unref(server_);
+            server_ = nullptr;
         }
     }
 
     // Member variables
-    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
-    rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_pub_;
-    
-    GstElement* pipeline_ = nullptr;
-    GstElement* appsink_ = nullptr;
-    std::thread grab_thread_;
-    std::atomic<bool> stop_signal_{false};
-
-    std::string device_;
-    std::string frame_id_;
-    int width_;
-    int height_;
-    int framerate_;
-    size_t frame_count_;
+    GstRTSPServer* server_ = nullptr;
+    guint server_id_ = 0;
+    std::string pipeline_str_;
+    GMainLoop* loop_ = nullptr;
 };
 
 int main(int argc, char** argv)
@@ -598,10 +456,23 @@ int main(int argc, char** argv)
     rclcpp::init(argc, argv);
     
     try {
-        auto node = std::make_shared<CameraStreamer>();
+        auto node = std::make_shared<RTSPCameraStreamer>();
+        
+        // Create a timer to pump GLib events while ROS2 is spinning
+        auto timer = node->create_wall_timer(
+            std::chrono::milliseconds(10),
+            []() {
+                // Pump GLib main loop events
+                GMainContext* context = g_main_context_default();
+                while (g_main_context_pending(context)) {
+                    g_main_context_iteration(context, FALSE);
+                }
+            }
+        );
+        
         rclcpp::spin(node);
     } catch (const std::exception& e) {
-        RCLCPP_ERROR(rclcpp::get_logger("camera_driver"), "Error: %s", e.what());
+        RCLCPP_ERROR(rclcpp::get_logger("rtsp_camera_streamer"), "Error: %s", e.what());
         rclcpp::shutdown();
         return 1;
     }

@@ -10,9 +10,10 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(PkgConfig REQUIRED)
+find_package(image_transport REQUIRED)
 
 # Find system libraries
-pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0 )
+pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0 gstreamer-rtsp-server-1.0)
 pkg_check_modules(UDEV REQUIRED libudev)
 
 add_executable(camera_driver_exe src/camera_driver_node.cpp)
@@ -22,6 +23,7 @@ target_include_directories(camera_driver_exe PRIVATE
 )
 target_link_libraries(camera_driver_exe
   ${rclcpp_LIBRARIES}
+  ${image_transport_LIBRARIES}
   ${sensor_msgs_LIBRARIES}
   ${std_msgs_LIBRARIES}
   ${GST_LIBRARIES}
@@ -29,6 +31,7 @@ target_link_libraries(camera_driver_exe
 )
 ament_target_dependencies(camera_driver_exe
   rclcpp
+  image_transport
   sensor_msgs
   std_msgs
 )

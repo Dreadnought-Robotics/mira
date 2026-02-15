@@ -89,36 +89,29 @@ repoversion:
 	$(info Last commit in repository:)
 	@git log -1 --oneline
 
-build-docker-container:
+docker-ensure:
+	docker-compose up --no-recreate -d mira
+
+docker-x11:
+	xhost +local:docker || true
+
+build-docker-container: docker-ensure
 	$(info Building Docker container...)
-	@docker build -t mira .
+	@docker-compose build mira
 
 docker-fix-perms:
 	sudo chown -R $(shell id -u):$(shell id -g) .
 
 export _UID=$(shell id -u)
 export _GID=$(shell id -g)
-build-in-docker: docker-fix-perms
-	docker-compose up mira-builder
-	# @docker run \
-	# 	--rm \
-	# 	-v $(PWD):/workspace \
-	# 	-u $(UID):$(GID) \
-	# 	--net=host \
-	# 	-w /workspace mira \
-	# 	bash -c "make repoversion && \
-	# 	make clean && \
-	# 	source /opt/ros/jazzy/setup.bash && \
-	# 	source .venv/bin/activate && \
-	# 	colcon build ${COLCON_ARGS}"
+build-in-docker: docker-fix-perms docker-ensure
+	docker-compose exec mira
+	 	bash -c "make repoversion && \
+	 	make clean && \
+	 	make build"
 
-docker:
-	docker-compose run mira
-	# docker run -it --rm \
-	# 	-v $(PWD):/workspace \
-	# 	-u $(UID):$(GID) \
-	# 	-w /workspace mira \
-	# 	bash
+docker: docker-ensure docker-x11
+	docker-compose exec -u root mira /bin/bash
 
 b: check-ros
 	@source /opt/ros/jazzy/setup.bash && \

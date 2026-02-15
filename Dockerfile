@@ -43,7 +43,12 @@ RUN rm -rf ./build ./log ./install
 # RUN apt install libusb-1.0-0-dev -y
 
 RUN apt-get install --no-install-recommends -y \
-    usbutils
+    usbutils \
+    gstreamer1.0-plugins-good \
+    libgstreamer1.0-dev libgstreamer-plugins-good1.0-dev libgstreamer-plugins-bad1.0-dev \
+    gstreamer1.0-tools \
+    gstreamer1.0-plugins-base-apps \
+    vim
 
 
 

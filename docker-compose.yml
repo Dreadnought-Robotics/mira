@@ -7,27 +7,45 @@ services:
     tty: true
     volumes:
       - .:/workspace
+      - /dev:/dev
+      - /run/udev:/run/udev
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    privileged: true
     user: "${_UID}:${_GID}"
     network_mode: host
-    devices:
-      - /dev/camera_bottom
-#      - /dev/camera_front 
     working_dir: /workspace
     entrypoint: /bin/bash
+    environment:
+      - DISPLAY:"${DISPLAY}"
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+  zed:
+      image: zed
+      build:
+        context: .
+        dockerfile: ZED.Dockerfile
+      tty: true
+      volumes:
+        - $HOME/zed-ws:/workspace
+        - /tmp/.X11-unix:/tmp/.X11-unix
+      privileged: true
+      network_mode: host
+      working_dir: /workspace
+      entrypoint: /bin/bash
+      environment:
+        - DISPLAY:"${DISPLAY}"
+      runtime: nvidia
+      deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: all
+                capabilities: [gpu]
 
-  mira-builder:
-    image: mira
-    build:
-      context: .
-      dockerfile: Dockerfile
-    working_dir: /workspace
-    volumes:
-      - .:/workspace
-    user: "${_UID}:${_GID}"
-    network_mode: "host"
-    command: >
-      bash -c "make repoversion &&
-      make clean &&
-      source /opt/ros/jazzy/setup.bash &&
-      source .venv/bin/activate &&
-      colcon build $${COLCON_ARGS}"
