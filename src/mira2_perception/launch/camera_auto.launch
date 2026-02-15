@@ -16,6 +16,6 @@
           exec="camera_driver_exe"
           name="camera_bottomcam"
           output="screen">
-        <param name="device_path" value="/dev/camera_bottom" />
+        <param name="device_path" value="-1" />
     </node>
 </launch>
