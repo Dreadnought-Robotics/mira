@@ -143,6 +143,7 @@ public:
         RCLCPP_INFO(this->get_logger(), "RTSP Port:          %d", port);
         RCLCPP_INFO(this->get_logger(), "RTSP Mount Point:   %s", mount_point.c_str());
         RCLCPP_INFO(this->get_logger(), "RTSP URL:           rtsp://<host>:%d%s", port, mount_point.c_str());
+        RCLCPP_INFO(this->get_logger(), "Command to recieve: ros2 run camera_driver camera_driver_recv --ros-args -p rtsp_url:=rtsp://<host>:%d%s", port, mount_point.c_str());
         RCLCPP_INFO(this->get_logger(), "============================================================");
 
         // Build GStreamer pipeline for RTSP streaming with ultra-low latency

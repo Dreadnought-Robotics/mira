@@ -27,11 +27,11 @@
         <param name="port" value="$(var port)"/>
     </node>
 
-    <node pkg="camera_driver"
+    <!-- <node pkg="camera_driver"
           exec="camera_driver_recv"
           name="camera_bottomcam_recv"
           output="screen">
         <param name="rtsp_url" value="rtsp://$(var send_ip):$(var port)/image_rtsp"/>
         <param name="camera_bottom" />
-    </node>
+    </node> -->
 </launch>
