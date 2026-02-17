@@ -3,6 +3,8 @@
 export FORCE_COLOR=1
 export RCUTILS_COLORIZED_OUTPUT=1
 export RCUTILS_CONSOLE_OUTPUT_FORMAT={severity} {message}
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
 SHELL := /bin/bash
 
 WS := source .venv/bin/activate && source install/setup.bash
