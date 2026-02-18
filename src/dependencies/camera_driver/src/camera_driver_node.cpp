@@ -10,6 +10,7 @@
 // and attach our ROS2 callback — so the camera is opened exactly once and
 // encoding happens exactly once regardless of the number of RTSP clients.
 
+#include "gst/rtsp-server/rtsp-server-object.h"
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
 #include <gst/gstdevice.h>
@@ -251,6 +252,7 @@ EncoderInfo detect_best_encoder(long bitrate, long framerate) {
     GstRTSPMediaFactory *factory = gst_rtsp_media_factory_new();
     gst_rtsp_media_factory_set_launch(factory, pipeline_str.c_str());
     gst_rtsp_media_factory_set_shared(factory, TRUE);
+
 
     g_signal_connect(factory, "media-configure",
                      G_CALLBACK(on_media_configure_static), this);

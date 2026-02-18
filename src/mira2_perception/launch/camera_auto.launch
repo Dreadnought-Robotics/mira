@@ -1,8 +1,11 @@
 <!-- camera_reader_uvc.launch.xml -->
 <launch>
+ <arg name="port" default="8554" />
     <node pkg="camera_driver"
           exec="camera_driver_exe"
           name="camera_auto"
           output="screen">
+          <param name="port" value="$(var port)"/>
     </node>
+     <executable cmd="sleep 2 ; gst-launch-1.0 rtspsrc location=rtsp://$(env MACHINE_IP):$(var port)/image_rtsp ! fakesink" cwd="/home" shell="true"/>
 </launch>
