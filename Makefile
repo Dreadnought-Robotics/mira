@@ -139,6 +139,7 @@ install-mavproxy: check-uv
 	@patch /home/$(USER)/.local/share/uv/tools/mavproxy/lib/$(PYTHON_VERSION)/site-packages/MAVProxy/modules/lib/rline.py < ./misc/patches/mavproxy_rline_fix.patch
 
 proxy-pixhawk:
+	$(info If you get a realine error -> Edit the file mentioned in the stacktrace and remove the import from __future__ for input())
 ifndef LAPTOP_IP
 	$(error No LAPTOP_IP set, please set it to your laptop's IP and call the command like this: make proxy-pixhawk LAPTOP_IP=192.168.2.XX)
 endif
@@ -183,15 +184,20 @@ validate-all:
 
 GSTREAMER_FIX=export LD_PRELOAD=$(shell gcc -print-file-name=libunwind.so.8)
 
-camera_2:
+camera_bottomcam:
 	${WS} && \
 	${GSTREAMER_FIX} && \
-	ros2 launch mira2_perception camera_2.launch
+	ros2 launch mira2_perception camera_imx335.launch camera_name:=camera_bottomcam
 
-camera_1:
+camera_auto:
 	${WS} && \
 	${GSTREAMER_FIX} && \
-	ros2 launch mira2_perception camera_1.launch
+	ros2 launch mira2_perception camera_auto.launch
+
+camera_frontcam:
+	${WS} && \
+	${GSTREAMER_FIX} && \
+	ros2 launch mira2_perception camera_imx335.launch camera_name:=camera_frontcam
 
 PIXHAWK_PORT ?= /dev/Pixhawk
 alt_master: check-ros

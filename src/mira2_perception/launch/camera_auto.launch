@@ -1,21 +1,8 @@
 <!-- camera_reader_uvc.launch.xml -->
 <launch>
-
-    <!-- Streaming parameters -->
-    <arg name="stream"        default="true"/>
-    <arg name="vendor_id"     default="0x0c45"/>
-    <arg name="product_id"    default="0x6366"/>
-    <arg name="serial_no"     default="SN0001"/>
-    <arg name="image_width"   default="1280"/>
-    <arg name="image_height"  default="720"/>
-    <arg name="frame_format"  default="MJPEG"/>
-    <arg name="framerate"     default="30"/>
-    <arg name="port" default="2000" />
-
     <node pkg="camera_driver"
           exec="camera_driver_exe"
-          name="camera_bottomcam"
+          name="camera_auto"
           output="screen">
-        <param name="device_path" value="/dev/video2" />
     </node>
 </launch>
