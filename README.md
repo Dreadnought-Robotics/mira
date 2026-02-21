@@ -2,7 +2,7 @@
 
 # Mira Firmware
 The firmware for the Mira AUV
-Please consult the [https://github.com/Dreadnought-Robotics/mira/wiki](wiki) for detailed usage instructions and documentation
+Please refer to the repository Wiki for detailed usage instructions and documentation. The Wiki can be accessed from the tab near the Security section at the top of this page.
 
 
 > [!IMPORTANT]
