@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
 			'mira2_dashboard_exe = mira2_dashboard.main:main'
+            'improved = mira2_perception.src.improved:main',
         ],
     },
 )
