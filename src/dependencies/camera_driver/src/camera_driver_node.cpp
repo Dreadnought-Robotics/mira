@@ -421,15 +421,19 @@ private:
       if (!props)
         continue;
 
-      guint dev_vendor = 0, dev_product = 0;
-      gst_structure_get_uint(props, "device.vendor-id", &dev_vendor);
-      gst_structure_get_uint(props, "device.product-id", &dev_product);
+      const gchar *dev_vendor_str = gst_structure_get_string(props, "device.vendor.id");
+      const gchar *dev_product_str = gst_structure_get_string(props, "device.product.id");
       const gchar *dev_sn = gst_structure_get_string(props, "device.serial");
+
+	int dev_vendor = strtol(dev_vendor_str, nullptr, 16);
+	int dev_product = strtol(dev_product_str, nullptr, 16);
+
+      RCLCPP_INFO(get_logger(), "Found device (%x, %x, %s)", dev_vendor, dev_product, dev_sn);
 
       bool match =
           (vendor == 0 || dev_vendor == (guint)vendor) &&
           (product == 0 || dev_product == (guint)product) &&
-          (serial.empty() || (dev_sn && std::string(dev_sn) == serial));
+          (serial.empty() || (dev_sn && std::string(dev_sn).find(serial) != std::string::npos));
 
       if (match)
         result = GST_DEVICE(gst_object_ref(dev));
@@ -452,11 +456,22 @@ private:
     }
 
     GList *devices = gst_device_monitor_get_devices(monitor);
+retry:
     GstDevice *result = GST_DEVICE(g_object_ref(g_list_first(devices)->data));
     auto props = gst_device_get_properties(result);
     auto dev_path = gst_structure_get_string(props, "api.v4l2.path");
-    device_path = dev_path;
+    if (dev_path == nullptr) {
+   	dev_path = gst_structure_get_string(props, "device.path"); 
+    }
+    if (dev_path != nullptr) {
+	    RCLCPP_INFO(get_logger(), "Got device with path: %s", dev_path);
+    	device_path = g_strdup(dev_path);
     gst_structure_free(props);
+    } else {
+	devices = g_list_first(devices);
+    gst_structure_free(props);
+    	goto retry;
+    }
 
     g_list_free_full(devices, gst_object_unref);
     gst_device_monitor_stop(monitor);

@@ -87,7 +87,7 @@ class UnderwaterDockingNode(Node):
         
         # Parameters
         self.declare_parameter('calibration_file', 'calibration_data.json')
-        self.declare_parameter('video_file', '') 
+        self.declare_parameter('video_file', 'rtsp://192.1682.6:8554/image_rtsp') 
         self.declare_parameter('marker_size', 0.15)
         self.declare_parameter('enable_gui', True)
 
