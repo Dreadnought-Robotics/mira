@@ -26,8 +26,8 @@ RUN rosdep update
 # Set working directory
 WORKDIR /workspace
 
-# Copy project files
-RUN git clone https://github.com/Dreadnought-Robotics/mira /workspace
+# Copy project files so it uses your local fixes!
+COPY . /workspace
 
 # Install Python dependencies using uv
 RUN uv sync
@@ -36,21 +36,20 @@ RUN uv sync
 RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && \
     make install-deps"
 
-# RUN rm -rf /var/lib/apt/lists/*
-
 RUN rm -rf ./build ./log ./install
 
-# RUN apt install libusb-1.0-0-dev -y
-
-RUN apt-get install --no-install-recommends -y \
+# Added apt-get update before install to prevent cache miss errors
+RUN apt-get update && apt-get install --no-install-recommends -y \
     usbutils \
     gstreamer1.0-plugins-good \
-    libgstreamer1.0-dev libgstreamer-plugins-good1.0-dev libgstreamer-plugins-bad1.0-dev \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    libgstreamer-plugins-good1.0-dev \
+    libgstreamer-plugins-bad1.0-dev \
+    libgstrtspserver-1.0-dev \
     gstreamer1.0-tools \
     gstreamer1.0-plugins-base-apps \
     vim
-
-
 
 # Build the workspace
 RUN /bin/bash -c "make build"
