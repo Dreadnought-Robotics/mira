@@ -1,7 +1,11 @@
 <launch>
-    <!-- Declare the argument -->
     <arg name="pixhawk_address" default="/dev/Pixhawk"/>
+    <arg name="ref_voltage" default="13.0"/>
     
+    <node name="thrust_scaler" pkg="mira2_control_master" exec="thrustScaler" output="screen">
+        <param name="reference_voltage" value="$(var ref_voltage)"/>
+    </node>
+
     <node name="pymavlink_commands" pkg="mira2_control_master" exec="alt_master" output="screen">
         <param name="pixhawk_address" value="$(var pixhawk_address)"/>
     </node>
