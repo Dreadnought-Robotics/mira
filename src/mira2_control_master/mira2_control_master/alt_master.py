@@ -61,7 +61,7 @@ class PixhawkMaster(Node):
         # ROS 2 publisher and subscriber
         self.telemetry_pub = self.create_publisher(Telemetry, "/master/telemetry", 10)
         self.thruster_subs_rov = self.create_subscription(
-            Commands, "/master/commands", self.rov_callback, 10
+            Commands, "/master/commands_scaled", self.rov_callback, 10
         )
         self.kill_sub = self.create_subscription(
             EmergencyKill, "/emergency_stop", self.kill_callback, 10
