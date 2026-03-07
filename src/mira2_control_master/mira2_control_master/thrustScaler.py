@@ -16,7 +16,7 @@ class BatteryAwareScaler(Node):
             description='The voltage the vehicle should emulate (reference point).',
             floating_point_range=[FloatingPointRange(from_value=10.0, to_value=20.0, step=0.1)]
         )
-        self.declare_parameter('reference_voltage', 12.0, ref_desc)
+        self.declare_parameter('reference_voltage', 13.0, ref_desc)
 
         # Static Config
         self.neutral_pwm = 1500
