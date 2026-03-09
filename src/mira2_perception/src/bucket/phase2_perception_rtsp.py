@@ -17,7 +17,7 @@ class PhaseTwoPerceptionNode(Node):
         self.get_logger().info("Phase Two Perception Node Started")
 
         # --- RTSP Setup ---
-        self.rtsp_url = "rtsp://192.168.2.6:2000/image_rtsp" # Replace with your actual link
+        self.rtsp_url = "rtsp://192.168.2.6:2000/image_rtsp"
         self.cap = cv2.VideoCapture(self.rtsp_url)
         
         if not self.cap.isOpened():
@@ -63,7 +63,6 @@ class PhaseTwoPerceptionNode(Node):
 
         if not ret:
             self.get_logger().warn("RTSP frame drop/disconnect. Reconnecting...")
-            # Simple reconnect logic
             self.cap.release()
             self.cap = cv2.VideoCapture(self.rtsp_url)
             return
@@ -204,14 +203,17 @@ class PhaseTwoPerceptionNode(Node):
             color_msg.data = detected_color
             self.color_pub.publish(color_msg)
 
-        self.get_logger().info(f"Published -> Offset: ({norm_x:.2f},{norm_y:.2f}) Color: {detected_color}")
+            self.get_logger().info(f"Published -> Offset: ({norm_x:.2f},{norm_y:.2f}) Color: {detected_color}")
+
+        else:
+            self.get_logger().warn("No bucket detected")
 
         # Visualization
         cv2.imshow("Bucket Detection", vis)
         cv2.imshow("Blue Mask", blue_mask)
         cv2.waitKey(1)
-        
-        
+
+
     def cleanup(self):
         """Safely release resources on shutdown."""
         if self.cap.isOpened():

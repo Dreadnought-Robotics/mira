@@ -47,7 +47,7 @@ class PhaseTwoPerceptionNode(Node):
         self.color_pub = self.create_publisher(String, '/bucket/p2color', 10)
 
         # Subscriber
-        self.frame_sub = self.create_subscription(Image, '/camera_bottom', self.frame_callback, 10)
+        self.frame_sub = self.create_subscription(Image, '/camera/image_raw', self.frame_callback, 10)
 
 
     def frame_callback(self, msg):
