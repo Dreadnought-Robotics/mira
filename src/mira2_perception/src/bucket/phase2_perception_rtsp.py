@@ -7,8 +7,6 @@ from collections import deque
 
 from geometry_msgs.msg import Point
 from std_msgs.msg import String
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
 
 
 class PhaseTwoPerceptionNode(Node):
@@ -18,7 +16,13 @@ class PhaseTwoPerceptionNode(Node):
 
         self.get_logger().info("Phase Two Perception Node Started")
 
-        self.bridge = CvBridge()
+        # --- RTSP Setup ---
+        self.rtsp_url = "rtsp://192.168.2.6:2000/image_rtsp" # Replace with your actual link
+        self.cap = cv2.VideoCapture(self.rtsp_url)
+        
+        if not self.cap.isOpened():
+            self.get_logger().error(f"Failed to open RTSP stream at {self.rtsp_url}")
+
         self.frame = None
         self.ellipse = None
 
@@ -46,23 +50,29 @@ class PhaseTwoPerceptionNode(Node):
         self.offset_pub = self.create_publisher(Point, '/bucket/p2offset', 10)
         self.color_pub = self.create_publisher(String, '/bucket/p2color', 10)
 
-        # Subscriber
-        self.frame_sub = self.create_subscription(Image, '/camera_bottom', self.frame_callback, 10)
+        # Timer to read from RTSP and process (~30 FPS)
+        timer_period = 1.0 / 30.0  
+        self.timer = self.create_timer(timer_period, self.timer_callback)
 
 
-    def frame_callback(self, msg):
-
-        self.frame = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-
-        if self.frame is None:
-            self.get_logger().warn("Frame conversion failed")
+    def timer_callback(self):
+        if not self.cap.isOpened():
             return
 
+        ret, frame = self.cap.read()
+
+        if not ret:
+            self.get_logger().warn("RTSP frame drop/disconnect. Reconnecting...")
+            # Simple reconnect logic
+            self.cap.release()
+            self.cap = cv2.VideoCapture(self.rtsp_url)
+            return
+
+        self.frame = frame
         self.buckets_main()
 
 
     def detect_buckets(self):
-
         vis = self.frame.copy()
 
         h, w = self.frame.shape[:2]
@@ -109,28 +119,22 @@ class PhaseTwoPerceptionNode(Node):
                 detected_color = "orange"
 
         if valid_contours:
-
             largest = max(valid_contours, key=cv2.contourArea)
 
             if len(largest) >= 5:
-
                 candidate = cv2.fitEllipse(largest)
 
                 if self.is_valid_ellipse(candidate, w, h):
-
                     self.ellipse = candidate
-
                     (cx, cy), axes, angle = self.ellipse
 
                     self.cx_history.append(int(cx))
                     self.cy_history.append(int(cy))
 
                     detected = True
-
                     self.get_logger().info(f"{detected_color} bucket detected")
 
         if self.cx_history:
-
             smooth_cx = int(np.mean(self.cx_history))
             smooth_cy = int(np.mean(self.cy_history))
 
@@ -149,74 +153,27 @@ class PhaseTwoPerceptionNode(Node):
             cv2.circle(vis, (smooth_cx, smooth_cy), 8, (0, 255, 0), -1)
 
             # Frame center
-            cv2.drawMarker(
-                vis,
-                (frame_cx, frame_cy),
-                (255, 255, 255),
-                cv2.MARKER_CROSS,
-                20,
-                2
-            )
+            cv2.drawMarker(vis, (frame_cx, frame_cy), (255, 255, 255), cv2.MARKER_CROSS, 20, 2)
 
             # Offset line
-            cv2.line(
-                vis,
-                (frame_cx, frame_cy),
-                (smooth_cx, smooth_cy),
-                (0, 255, 255),
-                2
-            )
+            cv2.line(vis, (frame_cx, frame_cy), (smooth_cx, smooth_cy), (0, 255, 255), 2)
 
             status = "DETECTED" if detected else "LOST"
             status_color = (0, 255, 0) if detected else (0, 165, 255)
 
-            cv2.putText(
-                vis,
-                status,
-                (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                status_color,
-                2
-            )
-
-            cv2.putText(
-                vis,
-                f"Offset norm: ({norm_x:+.2f},{norm_y:+.2f})",
-                (10, 60),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 255, 255),
-                2
-            )
+            cv2.putText(vis, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
+            cv2.putText(vis, f"Offset norm: ({norm_x:+.2f},{norm_y:+.2f})", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
             return norm_x, norm_y, detected, detected_color, vis, blue_mask
 
         # If nothing detected yet
-        cv2.drawMarker(
-            vis,
-            (frame_cx, frame_cy),
-            (255, 255, 255),
-            cv2.MARKER_CROSS,
-            20,
-            2
-        )
-
-        cv2.putText(
-            vis,
-            "NO DETECTION",
-            (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 0),
-            2
-        )
+        cv2.drawMarker(vis, (frame_cx, frame_cy), (255, 255, 255), cv2.MARKER_CROSS, 20, 2)
+        cv2.putText(vis, "NO DETECTION", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
         return None, None, False, "none", vis, blue_mask
 
 
     def is_valid_ellipse(self, ellipse, w, h):
-
         (cx, cy), (ma, Mi), angle = ellipse
 
         if not (0 < cx < w and 0 < cy < h):
@@ -226,7 +183,6 @@ class PhaseTwoPerceptionNode(Node):
             return False
 
         ratio = max(ma, Mi) / (min(ma, Mi) + 1e-5)
-
         if ratio > 4.0:
             return False
 
@@ -234,11 +190,9 @@ class PhaseTwoPerceptionNode(Node):
 
 
     def buckets_main(self):
-
         norm_x, norm_y, detected, detected_color, vis, blue_mask = self.detect_buckets()
 
         if norm_x is not None:
-
             offset_msg = Point()    
             offset_msg.x = float(norm_x)
             offset_msg.y = float(norm_y)
@@ -250,30 +204,33 @@ class PhaseTwoPerceptionNode(Node):
             color_msg.data = detected_color
             self.color_pub.publish(color_msg)
 
-            self.get_logger().info(
-                f"Published -> Offset: ({norm_x:.2f},{norm_y:.2f}) Color: {detected_color}"
-            )
-
-        else:
-            self.get_logger().warn("No bucket detected")
+        self.get_logger().info(f"Published -> Offset: ({norm_x:.2f},{norm_y:.2f}) Color: {detected_color}")
 
         # Visualization
         cv2.imshow("Bucket Detection", vis)
         cv2.imshow("Blue Mask", blue_mask)
         cv2.waitKey(1)
+        
+        
+    def cleanup(self):
+        """Safely release resources on shutdown."""
+        if self.cap.isOpened():
+            self.cap.release()
+        cv2.destroyAllWindows()
 
 
 def main(args=None):
-
     rclpy.init(args=args)
-
     node = PhaseTwoPerceptionNode()
 
-    rclpy.spin(node)
-
-    node.destroy_node()
-
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info("Keyboard Interrupt detected, shutting down.")
+    finally:
+        node.cleanup()
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":
