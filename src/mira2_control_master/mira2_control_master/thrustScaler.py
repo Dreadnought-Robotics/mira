@@ -40,6 +40,18 @@ class BatteryAwareScaler(Node):
         self.sub_telem = self.create_subscription(Telemetry, "/master/telemetry", self.telem_cb, 10)
         self.sub_cmd = self.create_subscription(Commands, "/master/commands", self.cmd_cb, 10)
         self.pub_scaled = self.create_publisher(Commands, "/master/commands_scaled", 10)
+        # normalised
+        self.sub_cmd = self.create_subscription(Commands, "/master/commands_normalized", self.cmd_cb, 10)
+
+    # normalised
+    def normal_to_pwm(self, msg):
+        msg.forward=1500+(msg.forward *400)
+        msg.lateral=1500+(msg.lateral *400)
+        msg.thrust=1500+(msg.thrust *400)
+        msg.pitch=1500+(msg.pitch *400)
+        msg.roll=1500+(msg.roll *400)
+        msg.yaw=1500+(msg.yaw *400)
+        return msg
 
     def telem_cb(self, msg):
         self.smoothed_v = (self.alpha * msg.battery_voltage) + ((1 - self.alpha) * self.smoothed_v)
