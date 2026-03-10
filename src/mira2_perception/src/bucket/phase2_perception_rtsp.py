@@ -33,7 +33,7 @@ class PhaseTwoPerceptionNode(Node):
         self.cy_history = deque(maxlen=self.SMOOTH_N)
 
         # HSV Ranges
-        self.LOWER_BLUE = np.array([105, 50, 50])
+        self.LOWER_BLUE = np.array([95, 50, 50])
         self.UPPER_BLUE = np.array([125, 255, 255])
 
         self.LOWER_ORANGE_1 = np.array([0, 50, 50])
