@@ -34,6 +34,7 @@ install(FILES
 # Install the Python executable
 install(PROGRAMS
   bp_ros2_node.py
+  optical_flow.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
