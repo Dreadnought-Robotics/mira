@@ -18,7 +18,8 @@
   <exec_depend>python3-opencv</exec_depend>
   <exec_depend>python3-scipy</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
-
+  <exec_depend>custom_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
   <!-- <depend>v4l2_camera</depend> -->
 
   <export>
