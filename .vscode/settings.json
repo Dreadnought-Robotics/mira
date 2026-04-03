@@ -7,5 +7,6 @@
         "/opt/ros/jazzy/lib/python3.13/site-packages",
         "/home/nes/DNT/mira/install/custom_msgs/lib/python3.12/site-packages",
     ],
+    "ROS2.distro": "jazzy",
     // "clangd.com"
 }
