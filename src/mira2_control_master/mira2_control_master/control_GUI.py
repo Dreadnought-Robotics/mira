@@ -78,9 +78,6 @@ class CompassWidget(QWidget):
         painter.setBrush(QBrush(QColor("#A6ADC8"))); painter.drawPolygon(n_tail)
         painter.setBrush(QBrush(QColor("#CDD6F4"))); painter.drawEllipse(QPoint(0,0), 4, 4); painter.restore()
 
-# -------------------------------------------------------------------------
-# ROS 2 Node
-# -------------------------------------------------------------------------
 class DashboardNode(Node):
     def __init__(self, signals):
         super().__init__("rov_dashboard_node")
