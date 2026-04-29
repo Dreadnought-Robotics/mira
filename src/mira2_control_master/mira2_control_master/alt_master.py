@@ -45,22 +45,20 @@ class PixhawkMaster(Node):
         self.declare_parameter("pixhawk_address", "/dev/Pixhawk")
 
         # Read parameters and update attributes if provided
-
         self.mode = self.get_parameter("initial_mode").value
         self.pixhawk_port = self.get_parameter("pixhawk_address").value
-
 
         self.get_logger().info(f"pixhawk_address='{self.pixhawk_port}', initial_mode='{self.mode}'")
 
         # Initialize MAVLink connection
-        self.master = mavutil.mavlink_connection(self.pixhawk_port, baud=57600) # 115200)
+        self.master = mavutil.mavlink_connection(self.pixhawk_port, baud=57600)
         self.get_logger().info("MAVLink connection established")
 
         self.get_logger().info("Requesting HEARTBEAT")
         self.request_message_interval(mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT, 100)
 
         self.sys_status_msg = ardupilotmega.MAVLink_sys_status_message
-       # self.imu_msg = ardupilotmega.MAVLink_scaled_imu2_message
+        self.imu_msg = ardupilotmega.MAVLink_scaled_imu2_message  # UNCOMMENTED
         self.attitude_msg = ardupilotmega.MAVLink_attitude_quaternion_message
         self.vfr_hud_msg = ardupilotmega.MAVLink_vfr_hud_message
         self.depth_msg = ardupilotmega.MAVLink_scaled_pressure2_message
@@ -73,17 +71,17 @@ class PixhawkMaster(Node):
             Commands, "/master/commands", self.rov_callback, 10
         )
         self.imu_pub = self.create_publisher(Imu, "/master/imu_ned", 10)
+        
         # Service to toggle emergency lock
         self.toggle_kill_srv = self.create_service(Trigger, "/toggle_emergency", self.toggle_emergency)
         self.channel_ary = [1500] * 8  # Initialize channel values array
+        
         self.get_logger().info("Waiting for heartbeat from Pixhawk...")
         self.master.wait_heartbeat()  # Wait for the heartbeat from the Pixhawk
         self.telem_msg = Telemetry()  # Initialize telemetry message
         self.get_logger().info("PixhawkMaster node initialized")
 
     def rov_callback(self, msg: Commands):
-        # obj.get_logger().info("Got command!")
-
         # Handle arming/disarming
         if msg.arm == 1 and not self.arm_state:
             if self.emergency_locked:
@@ -113,49 +111,29 @@ class PixhawkMaster(Node):
                 self.get_logger().warn("Disarm Pixhawk to change modes.")
 
     def arm(self):
-        """
-        Send an arm command to the Pixhawk.
-        """
+        """Send an arm command to the Pixhawk."""
         self.master.wait_heartbeat()
         self.master.mav.command_long_send(
             self.master.target_system,
             self.master.target_component,
             mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-            0,
-            1,  # Arm
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
+            0, 1, 0, 0, 0, 0, 0, 0,
         )
         self.get_logger().info("Arm command sent to Pixhawk")
 
     def disarm(self):
-        """
-        Send a disarm command to the Pixhawk.
-        """
+        """Send a disarm command to the Pixhawk."""
         self.master.wait_heartbeat()
         self.master.mav.command_long_send(
             self.master.target_system,
             self.master.target_component,
             mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-            0,
-            0,  # Disarm
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
+            0, 0, 0, 0, 0, 0, 0, 0,
         )
         self.get_logger().info("Disarm command sent to Pixhawk")
 
     def mode_switch(self):
-        """
-        Switch the Pixhawk mode.
-        """
+        """Switch the Pixhawk mode."""
         if self.mode not in self.master.mode_mapping():
             self.get_logger().error(f"Unknown mode: {self.mode}")
             self.get_logger().info(f"Try: {list(self.master.mode_mapping().keys())}")
@@ -186,9 +164,7 @@ class PixhawkMaster(Node):
         return response
 
     def set_rc_channel_pwm(self, id: int, pwm: int):
-        """
-        Set the PWM value for a specified RC channel.
-        """
+        """Set the PWM value for a specified RC channel."""
         if id < 1:
             self.get_logger().warn("Channel does not exist.")
             return
@@ -200,31 +176,23 @@ class PixhawkMaster(Node):
                 self.master.target_system,
                 self.master.target_component,
                 *rc_channel_values,
-            )  # RC channel list, in microseconds
+            )
 
     def actuate(self):
-        """
-        Send RC channel commands to the Pixhawk based on updated channel values.
-        """
+        """Send RC channel commands to the Pixhawk based on updated channel values."""
         for i in range(8):
             self.set_rc_channel_pwm(i + 1, int(self.channel_ary[i]))
 
     def request_message_interval(self, message_id: int, frequency_hz: float):
-        """
-        Request the interval at which a specified message should be sent.
-        """
+        """Request the interval at which a specified message should be sent."""
         self.master.mav.command_long_send(
             self.master.target_system,
             self.master.target_component,
             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
             0,
-            message_id,  # The MAVLink message ID
-            1e6 / frequency_hz,  # The interval between two messages in microseconds
-            0,
-            0,
-            0,
-            0,
-            0,
+            message_id,  
+            1e6 / frequency_hz, 
+            0, 0, 0, 0, 0,
         )
         response = self.master.recv_match(type="COMMAND_ACK", blocking=True)
         if (
@@ -248,17 +216,10 @@ class PixhawkMaster(Node):
         ros_imu_msg.angular_velocity.x = self.imu_msg.xgyro / 1000.0
         ros_imu_msg.angular_velocity.y = self.imu_msg.ygyro / 1000.0
         ros_imu_msg.angular_velocity.z = self.imu_msg.zgyro / 1000.0
-        # Convert from mGauss to Tesla
-        mgauss_to_tesla = 1e-7
-        # ros_imu_msg.magnetic_field.x = self.imu_msg.xmag * mgauss_to_tesla
-        # ros_imu_msg.magnetic_field.y = self.imu_msg.ymag * mgauss_to_tesla
-        # ros_imu_msg.magnetic_field.z = self.imu_msg.zmag * mgauss_to_tesla
         self.imu_pub.publish(ros_imu_msg)
 
     def telem_publish_func(self):
-        """
-        Publish telemetry data based on received MAVLink messages.
-        """
+        """Publish telemetry data based on received MAVLink messages."""
         self.telem_msg.arm = self.arm_state
         self.telem_msg.battery_voltage = float(self.sys_status_msg.voltage_battery / 1000)
         self.telem_msg.timestamp = float(self.get_clock().now().to_msg().sec)
@@ -269,18 +230,6 @@ class PixhawkMaster(Node):
         self.telem_msg.external_pressure = float(self.depth_msg.press_abs if self.depth_msg is not None else -1)
         
         self.telem_msg.heading = self.vfr_hud_msg.heading
-        
-        #self.telem_msg.imu_xacc = self.imu_msg.xacc
-        #self.telem_msg.imu_yacc = self.imu_msg.yacc
-        ##self.telem_msg.imu_zacc = self.imu_msg.zacc
-
-        '''self.telem_msg.imu_gyro_x = self.imu_msg.xgyro
-        self.telem_msg.imu_gyro_y = self.imu_msg.ygyro
-        self.telem_msg.imu_gyro_z = self.imu_msg.zgyro
-        '''
-        #self.telem_msg.imu_gyro_compass_x = self.imu_msg.xmag
-        #self.telem_msg.imu_gyro_compass_y = self.imu_msg.ymag
-        #self.telem_msg.imu_gyro_compass_z = self.imu_msg.zmag
         
         self.telem_msg.q1 = self.attitude_msg.q1
         self.telem_msg.q2 = self.attitude_msg.q2
@@ -303,25 +252,19 @@ class PixhawkMaster(Node):
         self.telem_msg.thruster_pwms[6] = self.thruster_pwms_msg.servo7_raw
         self.telem_msg.thruster_pwms[7] = self.thruster_pwms_msg.servo8_raw
 
-        if self.telem_msg.battery_voltage < 15:
-            # self.get_logger().warn(f"Battery Critically Low: {self.telem_msg.battery_voltage}V")
-            pass
-        # Optionally include emergency state in telemetry if supported
         try:
             self.telem_msg.killed = self.emergency_locked
         except Exception:
             pass
+            
         self.telemetry_pub.publish(self.telem_msg)
 
-        #self.publish_imu()
+        self.publish_imu()  # UNCOMMENTED
 
 
 def main(args=None):
     rclpy.init(args=args)
 
-    # Command line options
-    
-    # Instantiate class
     obj = PixhawkMaster()
 
     # Set up signal handler for graceful shutdown
@@ -338,7 +281,6 @@ def main(args=None):
     signal.signal(signal.SIGTERM, signal_handler)
 
     # Request message intervals
-
     obj.get_logger().info("Requesting HEARTBEAT")
     obj.request_message_interval(mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT, 100)
     obj.get_logger().info("Requesting SYS_STATUS")
@@ -349,8 +291,10 @@ def main(args=None):
     obj.request_message_interval(mavutil.mavlink.MAVLINK_MSG_ID_SCALED_PRESSURE2, 100)
     obj.get_logger().info("Requesting VFR_HUD")
     obj.request_message_interval(mavutil.mavlink.MAVLINK_MSG_ID_VFR_HUD, 100)
-    #obj.get_logger().info("Requesting SCALED_IMU2")
-    #obj.request_message_interval(mavutil.mavlink.MAVLINK_MSG_ID_SCALED_IMU2, 100)
+    
+    obj.get_logger().info("Requesting SCALED_IMU2") # UNCOMMENTED
+    obj.request_message_interval(mavutil.mavlink.MAVLINK_MSG_ID_SCALED_IMU2, 100) # UNCOMMENTED
+    
     obj.get_logger().info("Requesting SERVO_OUTPUT_RAW")
     obj.request_message_interval(mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW, 100)
     obj.get_logger().info("Requesting AHRS2")
@@ -359,11 +303,13 @@ def main(args=None):
     obj.get_logger().info("!!! Is depth sensor connected ? Connect it to I2C port on the pixhawk !!!")
 
     try:
-        # Receive MAVLink messages
+        # Receive MAVLink messages initially
         obj.get_logger().info("Waiting for SYS_STATUS")
         obj.sys_status_msg = obj.master.recv_match(type="SYS_STATUS", blocking=True)
-        #obj.get_logger().info("Waiting for SCALED_IMU2")
-       # obj.imu_msg = obj.master.recv_match(type="SCALED_IMU2", blocking=True)
+        
+        obj.get_logger().info("Waiting for SCALED_IMU2") # UNCOMMENTED
+        obj.imu_msg = obj.master.recv_match(type="SCALED_IMU2", blocking=True) # UNCOMMENTED
+        
         obj.get_logger().info("Waiting for ATTITUDE_QUATERNION")
         obj.attitude_msg = obj.master.recv_match(type="ATTITUDE_QUATERNION", blocking=True)
         obj.get_logger().info("Waiting for VFR_HUD")
@@ -384,9 +330,9 @@ def main(args=None):
         while rclpy.ok():
             obj.actuate()
             try:
-                # Receive MAVLink messages
+                # Receive MAVLink messages continuously
                 obj.sys_status_msg = obj.master.recv_match(type="SYS_STATUS", blocking=True)
-          #      obj.imu_msg = obj.master.recv_match(type="SCALED_IMU2", blocking=True)
+                obj.imu_msg = obj.master.recv_match(type="SCALED_IMU2", blocking=True) # UNCOMMENTED
                 obj.attitude_msg = obj.master.recv_match(type="ATTITUDE_QUATERNION", blocking=True)
                 obj.vfr_hud_msg = obj.master.recv_match(type="VFR_HUD", blocking=True)
                 obj.depth_msg = obj.master.recv_match(type="SCALED_PRESSURE2", blocking=True)
@@ -395,7 +341,6 @@ def main(args=None):
                 obj.get_logger().warn(f"Error receiving message: {e}")
                 continue
 
-            # timestamp_now = obj.get_clock().now().to_msg().sec
             obj.telem_publish_func()
 
             rclpy.spin_once(obj, timeout_sec=0.1)
