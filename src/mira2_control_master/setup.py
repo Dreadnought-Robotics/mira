@@ -26,6 +26,7 @@ setup(
             'alt_master = mira2_control_master.alt_master:main',
             'master = mira2_control_master.master:main',
 			'docking_controller_node = mira2_control_master.dock_controller:main',
+            'control_GUI = mira2_control_master.control_GUI:main',
 	    'killswitch = mira2_control_master.killswitch:main'
         ],
     },
