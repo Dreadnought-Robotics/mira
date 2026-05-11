@@ -1,4 +1,4 @@
-import os, sys, subprocess, shutil, re
+import os, sys, subprocess, shutil, re, shlex
 from pathlib import Path
 from typing import Optional
 import misc.infra.state as state
@@ -616,3 +616,157 @@ def target_setup():
 	info("🚀 Complete workspace setup finished!")
 
 
+# ── Bringup ───────────────────────────────────────────────────────────────────
+
+ONBOARD_MACHINE_NAME = "dntorin"
+ONBOARD_MACHINE_IP   = "192.168.2.6"
+ONBOARD_MIRA_DIR     = "~/mira"
+
+# Each profile: onboard = list of (window_name, make_target), laptop = list of make_target strings.
+# To add a new bringup variant, add an entry here and a Makefile target.
+BRINGUP_PROFILES: dict = {
+    "rov": {
+        "onboard": [
+            ("alt_master",       "alt_master"),
+            ("camera_bottomcam", "camera_bottomcam"),
+            ("camera_zed",       "camera_zed"),
+        ],
+        "laptop": ["teleop"],
+    },
+}
+
+# Pattern that signals the Docker container shell is ready
+_DOCKER_PROMPT_RE = r"root@[^ ]*:/workspace[^$]*#"
+
+
+def _open_new_terminal(cmd: str) -> None:
+    """Open a new terminal window running cmd. Tries common emulators in order."""
+    for term, mk_args in [
+        ("gnome-terminal", lambda c: ["gnome-terminal", "--", "bash", "-c", c + "; exec bash"]),
+        ("xterm",          lambda c: ["xterm", "-e", "bash", "-c", c + "; exec bash"]),
+        ("kitty",          lambda c: ["kitty", "bash", "-c", c + "; exec bash"]),
+        ("konsole",        lambda c: ["konsole", "-e", "bash", "-c", c + "; exec bash"]),
+        ("xfce4-terminal", lambda c: ["xfce4-terminal", "-e", "bash -c " + shlex.quote(c + "; exec bash")]),
+    ]:
+        if shutil.which(term):
+            subprocess.Popen(mk_args(cmd))
+            return
+    warn(f"No terminal emulator found. Run manually in a new terminal:\n  {cmd}")
+
+
+def _bringup_setup_remote(
+    session: str,
+    windows: list,
+    machine_name: str,
+    machine_ip: str,
+    mira_dir: str,
+) -> None:
+    """
+    On the remote host: create a tmux session with one named window per onboard task.
+    Each window runs `make docker` to enter the Docker container, waits for the shell
+    prompt, then runs its make target inside Docker.
+    """
+    # Build the remote bootstrap script sent via stdin over SSH
+    lines = [
+        "set -e",
+        "",
+        "wait_for_prompt() {",
+        "    local pane=$1 pattern=$2 timeout=${3:-120} elapsed=0",
+        "    while ! tmux capture-pane -p -t \"$pane\" | grep -qE \"$pattern\"; do",
+        "        sleep 1; elapsed=$((elapsed + 1))",
+        "        [ \"$elapsed\" -ge \"$timeout\" ] && { echo \"Timeout on $pane\" >&2; return 1; }",
+        "    done",
+        "}",
+        "",
+        f"if tmux has-session -t {shlex.quote(session)} 2>/dev/null; then",
+        f"    echo 'Session {session!r} already exists — reattaching'",
+        "    exit 0",
+        "fi",
+        "",
+    ]
+
+    # Create session with first window, then remaining windows
+    first_win, _ = windows[0]
+    lines.append(f"tmux new-session -d -s {shlex.quote(session)} -n {shlex.quote(first_win)}")
+    for win_name, _ in windows[1:]:
+        lines.append(f"tmux new-window -t {shlex.quote(session)} -n {shlex.quote(win_name)}")
+    lines.append("")
+
+    # Enter Docker in every window
+    for win_name, _ in windows:
+        pane = shlex.quote(f"{session}:{win_name}")
+        lines.append(f"tmux send-keys -t {pane} {shlex.quote(f'cd {mira_dir} && make docker')} Enter")
+    lines.append("")
+
+    # Wait for each window's Docker prompt before sending the task
+    for win_name, _ in windows:
+        pane = shlex.quote(f"{session}:{win_name}")
+        lines.append(f"wait_for_prompt {pane} {shlex.quote(_DOCKER_PROMPT_RE)} 120")
+    lines.append("")
+
+    # Send each task command into its Docker shell
+    for win_name, target in windows:
+        pane = shlex.quote(f"{session}:{win_name}")
+        lines.append(f"tmux send-keys -t {pane} {shlex.quote('make ' + target)} Enter")
+
+    script = "\n".join(lines)
+
+    step(f"Setting up remote tmux on {machine_name}@{machine_ip}...")
+    if state.DRY_RUN:
+        print(f"   [dry-run] remote script:\n{script}")
+        return
+
+    result = subprocess.run(
+        ["ssh", "-o", "StrictHostKeyChecking=no",
+         f"{machine_name}@{machine_ip}", "bash -s"],
+        input=script.encode(),
+        check=False,
+    )
+    if result.returncode != 0:
+        error(f"Remote tmux setup failed (exit {result.returncode})")
+        sys.exit(1)
+
+
+def target_bringup(
+    profile: str,
+    machine_name: str = ONBOARD_MACHINE_NAME,
+    machine_ip: str = ONBOARD_MACHINE_IP,
+    mira_dir: str = ONBOARD_MIRA_DIR,
+) -> None:
+    """Generic bringup: set up onboard tmux session then attach. Used by all bringup-* targets."""
+    if profile not in BRINGUP_PROFILES:
+        error(f"Unknown bringup profile: '{profile}'. Available: {', '.join(BRINGUP_PROFILES)}")
+        sys.exit(1)
+
+    cfg = BRINGUP_PROFILES[profile]
+    session = f"mira_{profile}"
+
+    header(f"Bringup '{profile}'  [{machine_name}@{machine_ip}]")
+
+    for tool in ("ssh", "tmux"):
+        if not exists(tool):
+            error(f"'{tool}' not found on PATH")
+            sys.exit(1)
+
+    _bringup_setup_remote(session, cfg["onboard"], machine_name, machine_ip, mira_dir)
+
+    ws = Path(".").resolve()
+    for laptop_target in cfg.get("laptop", []):
+        info(f"Opening local terminal → make {laptop_target}")
+        _open_new_terminal(f"cd {ws} && make {laptop_target}")
+
+    info(f"Attaching to '{session}' on {machine_name}@{machine_ip}...")
+    os.execlp(
+        "ssh", "ssh", "-t",
+        "-o", "StrictHostKeyChecking=no",
+        f"{machine_name}@{machine_ip}",
+        f"tmux attach -t {shlex.quote(session)}",
+    )
+
+
+@task("ROV bringup: onboard services (alt_master + cameras) + local teleop")
+def target_bringup_rov(
+    machine_name: str = ONBOARD_MACHINE_NAME,
+    machine_ip: str = ONBOARD_MACHINE_IP,
+):
+    target_bringup("rov", machine_name=machine_name, machine_ip=machine_ip)

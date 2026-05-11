@@ -230,6 +230,14 @@ def main():
 		target_help(*rest)
 		return
 
+	# bringup-<profile> — e.g. bringup-rov, bringup-docking
+	if cmd.startswith(("bringup-", "bringup_")):
+		profile = cmd[8:]
+		machine_name = rest[0] if len(rest) > 0 else ONBOARD_MACHINE_NAME
+		machine_ip   = rest[1] if len(rest) > 1 else ONBOARD_MACHINE_IP
+		target_bringup(profile, machine_name=machine_name, machine_ip=machine_ip)
+		return
+
 	# ── Task registry (no-arg tasks) ────────────────────────
 	task_info = TASKS.get(cmd)
 	if task_info is not None:

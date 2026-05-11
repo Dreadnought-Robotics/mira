@@ -1,4 +1,4 @@
-.PHONY: master alt_master position_zed guided_master build source install-deps submodules update install-udev bs fix-vscode dashboard telemetry-viz
+.PHONY: master alt_master position_zed guided_master build source install-deps submodules update install-udev bs fix-vscode dashboard telemetry-viz bringup-rov
 
 export FORCE_COLOR=1
 export RCUTILS_COLORIZED_OUTPUT=1
@@ -122,6 +122,13 @@ alt_master_sitl:
 
 teleop:
 	@python3 mira.py teleop
+
+# Onboard machine connection — override with: make bringup-rov ONBOARD_NAME=myhost ONBOARD_IP=x.x.x.x
+ONBOARD_NAME ?= dntorin
+ONBOARD_IP   ?= 192.168.2.6
+
+bringup-rov:
+	@python3 mira.py bringup-rov $(ONBOARD_NAME) $(ONBOARD_IP)
 
 ARUCO_ID ?= 5
 VIDEO ?= rtsp://192.168.2.6:2000/image_rtsp
