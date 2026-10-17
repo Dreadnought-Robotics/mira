@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mira is an **Autonomous Underwater Vehicle (AUV)** firmware for the Mira2 platform by Dreadnought Robotics. Built on **ROS2 Jazzy** (Ubuntu 24.04 LTS), it provides autonomous navigation, perception, and control for competition tasks (gate traversal, docking, bucket retrieval). The primary flight controller is a **Pixhawk** communicating via **MAVLink**.
+Mira is an **Autonomous Underwater Vehicle (AUV)** firmware for the MIRA 2.0 platform by Dreadnought Robotics. Built on **ROS2 Jazzy** (Ubuntu 24.04 LTS), it provides autonomous navigation, perception, and control for competition tasks (gate traversal, docking, bucket retrieval). The primary flight controller is a **Pixhawk** communicating via **MAVLink**.
 
 ## Build & Development Commands
 
